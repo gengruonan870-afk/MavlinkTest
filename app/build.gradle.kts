@@ -57,6 +57,4 @@ dependencies {
     implementation("com.google.android.exoplayer:exoplayer:2.18.7")
     implementation("com.google.android.exoplayer:exoplayer-rtsp:2.18.7") // 必须加这个看 RTSP 视频流
     implementation(fileTree("libs") { include("*.jar", "*.aar") })
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
-
 }

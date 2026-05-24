@@ -1,13 +1,8 @@
 package com.example.mavlinktest
 
-import android.content.ContentValues
-import android.graphics.Bitmap
 import android.os.*
-import android.provider.MediaStore
 import android.view.KeyEvent
 import android.view.MotionEvent
-import android.view.SurfaceView
-import android.view.PixelCopy
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
@@ -21,7 +16,6 @@ import com.skydroid.rcsdk.common.callback.CompletionCallbackWith
 import com.skydroid.rcsdk.common.error.SkyException
 import com.skydroid.rcsdk.common.pipeline.Pipeline
 import com.skydroid.rcsdk.key.RemoteControllerKey
-import java.io.OutputStream
 import java.lang.Exception
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -33,13 +27,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvLog: TextView
     private lateinit var tvTimeStamp: TextView
     private lateinit var tvTopStatus: TextView
-   // private lateinit var videoView: StyledPlayerView
 
-   // private var player: ExoPlayer? = null\
-   private lateinit var videoView: com.skydroid.fpvplayer.FPVWidget
+    // 云卓官方低延迟图传控件
+    private lateinit var videoView: com.skydroid.fpvplayer.FPVWidget
+
     private var isRecording = false
 
-    // 👉 全新的核心大脑变量
+    // 👉 核心通信与控制变量
     private var myPipeline: Pipeline? = null
     private var heartbeatTimer: java.util.Timer? = null
     private var lastMotorState = 100f // 记忆机器人当前状态，默认100（停止）
@@ -76,7 +70,6 @@ class MainActivity : AppCompatActivity() {
 
         // 清除日志按钮
         findViewById<Button>(R.id.btnLogClear)?.setOnClickListener { tvLog.text = "" }
-        // 屏蔽了连接串口的按钮，因为现在是全自动无线连接
         findViewById<Button>(R.id.btnConnect)?.setOnClickListener {
             Toast.makeText(this, "已升级为自动无线连接，无需手动开启", Toast.LENGTH_SHORT).show()
         }
@@ -86,7 +79,7 @@ class MainActivity : AppCompatActivity() {
             override fun onRcConnected() {
                 runOnUiThread { tvLog.append("✅ 遥控器底层握手成功！\n") }
                 setupPipeline()           // 握手成功后，建立无线管道
-                startJoystickPolling()    // 启动疯狂轮询器读取摇杆
+                startJoystickPolling()    // 启动雷达轮询器读取摇杆
             }
             override fun onRcConnectFail(e: SkyException?) {
                 runOnUiThread { tvLog.append("❌ 遥控器握手失败: $e\n") }
@@ -105,7 +98,7 @@ class MainActivity : AppCompatActivity() {
         myPipeline?.onCommListener = object : CommListener {
             override fun onConnectSuccess() {
                 runOnUiThread { tvLog.append("📡 无线数传管道已打通！\n") }
-                startHeartbeat() // 管道一通，立刻开始发送 700 心跳！
+                startHeartbeat() // 管道一通，立刻开始发送心跳！
             }
             override fun onConnectFail(e: SkyException) {
                 runOnUiThread { tvLog.append("❌ 管道连接失败: $e\n") }
@@ -115,7 +108,7 @@ class MainActivity : AppCompatActivity() {
                 heartbeatTimer?.cancel() // 断开时停止心跳
             }
             override fun onReadData(bytes: ByteArray) {
-                // 🔥 核心移植：将接收机发回来的数据，喂给你的解析器更新图表和UI！
+                // 将接收机发回来的数据喂给解析器更新 UI
                 mavlinkParser.feedData(bytes)
             }
         }
@@ -127,13 +120,13 @@ class MainActivity : AppCompatActivity() {
         heartbeatTimer = java.util.Timer()
         heartbeatTimer?.scheduleAtFixedRate(object : java.util.TimerTask() {
             override fun run() {
-                sendMotorCommand(700f) // 移植 Python 逻辑：每 500ms 发送一次心跳
+                sendMotorCommand(700f) // 每 500ms 发送一次心跳
             }
         }, 0, 500)
     }
 
     // ==========================================
-    // 🎮 摇杆榨汁机：获取摇杆数据并转换为指令
+    // 🎮 双轨制摇杆雷达：捕捉动作与指令下发
     // ==========================================
     private fun startJoystickPolling() {
         java.util.Timer().scheduleAtFixedRate(object : java.util.TimerTask() {
@@ -141,12 +134,17 @@ class MainActivity : AppCompatActivity() {
                 KeyManager.get(RemoteControllerKey.KeyChannels, object : CompletionCallbackWith<IntArray> {
                     override fun onSuccess(channels: IntArray?) {
                         if (channels != null && channels.size >= 6) {
+
+                            // Measured RC channels:
+                            // CH3 left stick vertical: 1050 bottom, 1500 center, 1950 top.
+                            // CH2 right stick vertical: 1050 top, 1500 center, 1950 bottom.
+                            // CH12 right dial: 1050 top, 1950 clockwise bottom.
                             val ch3Raw = channels[2] // 获取左摇杆上下方向
 
                             val currentMotorState = when {
-                                ch3Raw > 1600 -> 101f // 往上推：前进 (101)
-                                ch3Raw < 1400 -> 102f // 往下拉：后退 (102)
-                                else -> 100f          // 居中或轻微抖动：停止 (100)
+                                ch3Raw > 1600 -> 101f // 前进
+                                ch3Raw < 1400 -> 102f // 后退
+                                else -> 100f          // 停止
                             }
 
                             if (currentMotorState != lastMotorState) {
@@ -165,10 +163,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ==========================================
-    // 🚀 终极翻译官：发送 MAVLink (替代 serialPort.write)
+    // 🚀 终极翻译官：发送 MAVLink
     // ==========================================
     private fun sendMotorCommand(paramValue: Float) {
-        if (myPipeline == null) return // 管道没通不发
+        if (myPipeline == null) return
 
         val payloadLen = 33
         val msgId = 76 // COMMAND_LONG
@@ -177,15 +175,13 @@ class MainActivity : AppCompatActivity() {
         val buffer = java.nio.ByteBuffer.allocate(6 + payloadLen + 2)
         buffer.order(java.nio.ByteOrder.LITTLE_ENDIAN)
 
-        // 1. 打包头部
         buffer.put(0xFE.toByte())
         buffer.put(payloadLen.toByte())
         buffer.put((mavlinkSeq++ and 0xFF).toByte())
-        buffer.put(255.toByte()) // 地面站系统 ID
-        buffer.put(0.toByte())   // 组件 ID
+        buffer.put(255.toByte())
+        buffer.put(0.toByte())
         buffer.put(msgId.toByte())
 
-        // 2. 打包数据体
         buffer.putFloat(paramValue)
         buffer.putFloat(0f)
         buffer.putFloat(0f)
@@ -193,17 +189,15 @@ class MainActivity : AppCompatActivity() {
         buffer.putFloat(0f)
         buffer.putFloat(0f)
         buffer.putFloat(0f)
-        buffer.putShort(31025.toShort()) // command (你们主板专属密码)
-        buffer.put(1.toByte()) // target_system
-        buffer.put(1.toByte()) // target_component
-        buffer.put(0.toByte()) // confirmation
+        buffer.putShort(31025.toShort())
+        buffer.put(1.toByte())
+        buffer.put(1.toByte())
+        buffer.put(0.toByte())
 
-        // 3. 计算 CRC 校验码
         val bytes = buffer.array()
         val crc = calculateMavlinkCRC(bytes, bytes.size - 2, crcExtra)
         buffer.putShort(crc.toShort())
 
-        // 4. 🔥 通过无线电波发射！
         myPipeline?.writeData(buffer.array())
     }
 
@@ -350,47 +344,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun takeScreenshot() {
-        // 先把之前的截图逻辑注释掉，等视频通了咱们再来适配 FPVWidget 的截图方式
         Toast.makeText(this, "截图功能适配中...", Toast.LENGTH_SHORT).show()
-
-        /*
-        val surfaceView = videoView.getVideoSurfaceView() as? SurfaceView ?: return
-        val bitmap = Bitmap.createBitmap(surfaceView.width, surfaceView.height, Bitmap.Config.ARGB_8888)
-        PixelCopy.request(surfaceView, bitmap, { result ->
-            if (result == PixelCopy.SUCCESS) {
-                saveBitmapToGallery(bitmap)
-                runOnUiThread { Toast.makeText(this, "截图已保存", Toast.LENGTH_SHORT).show() }
-            }
-        }, Handler(Looper.getMainLooper()))
-        */
-    }
-
-    private fun saveBitmapToGallery(bitmap: Bitmap) {
-        val filename = "IMG_KRZY03_${System.currentTimeMillis()}.jpg"
-        val values = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, filename)
-            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-            put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/RobotInspection")
-        }
-        val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-        uri?.let {
-            val out: OutputStream? = contentResolver.openOutputStream(it)
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out!!)
-            out.close()
-        }
     }
 
     private fun setupVideo() {
         try {
-            // 1. 设置 RTSP 播放地址 (官方的专属写法)
             videoView.url = "rtsp://192.168.144.25:8554/main.264"
-
-            // 2. 推荐开启硬解，降低延迟
             videoView.usingMediaCodec = true
-
-            // 3. 开始播放！
             videoView.start()
-
         } catch (e: Exception) {
             tvLog.append("⚠️ 视频流初始化失败: ${e.message}\n")
         }
@@ -432,10 +393,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-       // player?.release()
         videoView.stop()
         heartbeatTimer?.cancel()
-        myPipeline?.let { PipelineManager.disconnectPipeline(it) } // 断开管道
+        myPipeline?.let { PipelineManager.disconnectPipeline(it) }
         RCSDKManager.disconnectRC()
     }
 }

@@ -1,9 +1,14 @@
 package com.example.mavlinktest
 
-import android.os.*
+import android.graphics.Color
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.KeyEvent
 import android.view.MotionEvent
-import android.widget.*
+import android.widget.Button
+import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
 import com.skydroid.rcsdk.KeyManager
@@ -20,46 +25,117 @@ import java.lang.Exception
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.text.SimpleDateFormat
-import java.util.*
+import java.util.Date
+import java.util.Locale
+import java.util.Timer
+import java.util.TimerTask
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 class MainActivity : AppCompatActivity() {
+
+    companion object {
+        private const val CMD_MOTOR_CONTROL = 31025
+        private const val CMD_STEPPER_CONTROL = 201
+        private const val CMD_STEPPER_HOME = 202
+        private const val HEARTBEAT_PARAM = 700f
+        private const val HEARTBEAT_ACK = 704f
+
+        private const val MAVLINK_COMMAND_LONG_MSG_ID = 76
+        private const val MAVLINK_COMMAND_LONG_PAYLOAD_LEN = 33
+        private const val MAVLINK_COMMAND_LONG_CRC_EXTRA = 152.toByte()
+
+        private const val MOTOR_STOP = 100
+        private const val MOTOR_FORWARD = 101
+        private const val MOTOR_BACKWARD = 102
+        private const val MOTOR_MAX_RPM = 550f
+
+        private const val LIFT_MIN_POSITION_MM = 0f
+        private const val LIFT_MAX_POSITION_MM = 155f
+        private const val LIFT_MAX_RPM = 850f
+        private const val LIFT_MAX_STEP_MM_PER_TICK = 1.5f
+
+        private const val RC_LOW = 1050
+        private const val RC_CENTER = 1500
+        private const val RC_HIGH = 1950
+        private const val RC_DEAD_LOW = 1400
+        private const val RC_DEAD_HIGH = 1600
+
+        private const val HEARTBEAT_TIMEOUT_MS = 2500L
+    }
 
     private lateinit var tvLog: TextView
     private lateinit var tvTimeStamp: TextView
     private lateinit var tvTopStatus: TextView
-
-    // 云卓官方低延迟图传控件
     private lateinit var videoView: com.skydroid.fpvplayer.FPVWidget
 
+    private var myPipeline: Pipeline? = null
+    private var heartbeatTimer: Timer? = null
+    private var joystickTimer: Timer? = null
+    private var mavlinkSeq = 0
     private var isRecording = false
 
-    // 👉 核心通信与控制变量
-    private var myPipeline: Pipeline? = null
-    private var heartbeatTimer: java.util.Timer? = null
-    private var lastMotorState = 100f // 记忆机器人当前状态，默认100（停止）
-    private var mavlinkSeq = 0
+    private var motorCommand = MOTOR_STOP
+    private var motorSpeedRpm = 0f
+    private var liftMotorId = 0
+    private var liftTargetPositionMm = 0f
+    private var liftSpeedRpm = 0f
+    private var lastSentLiftPositionMm = Float.NaN
+
+    private var batteryVol = 0f
+    private var batteryPct = 0
+    private var currentA = 0f
+    private var pitchAngle = 0f
+    private var pingMs = 0
+    private var tempOdd = 0f
+    private var tempEven = 0f
+    private var wireDiameter = 0f
+
+    private var lastHeartbeatAckTime = 0L
+    private var heartbeatTimeoutLogged = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // 地图隐私合规
         com.amap.api.maps.MapsInitializer.updatePrivacyShow(this, true, true)
         com.amap.api.maps.MapsInitializer.updatePrivacyAgree(this, true)
         setContentView(R.layout.activity_main)
 
-        // 1. 绑定视图
         tvLog = findViewById(R.id.tvLog)
         tvTimeStamp = findViewById(R.id.tvTimeStamp)
         tvTopStatus = findViewById(R.id.tvTopStatus)
         videoView = findViewById(R.id.videoView)
+        refreshTopStatus()
 
-        tvTopStatus.text = "机器人: KR-ZY 03 | \uD83D\uDD0B --V/--% | ⚡ --A | 坡度: --° | PING: --ms | \uD83C\uDF21\uFE0F奇:--℃ 偶:--℃ | 线径: --mm"
-
-        // 2. 初始化各模块
         setupVideo()
         setupTabs()
         setupVideoTools()
+        startClock()
 
-        // 时间戳时钟
+        findViewById<Button>(R.id.btnLogClear)?.setOnClickListener { tvLog.text = "" }
+        findViewById<Button>(R.id.btnConnect)?.setOnClickListener {
+            Toast.makeText(this, "Automatic wireless link is used.", Toast.LENGTH_SHORT).show()
+        }
+
+        RCSDKManager.initSDK(this, object : SDKManagerCallBack {
+            override fun onRcConnected() {
+                runOnUiThread { tvLog.append("RC connected.\n") }
+                setupPipeline()
+                startJoystickPolling()
+            }
+
+            override fun onRcConnectFail(e: SkyException?) {
+                runOnUiThread { tvLog.append("RC connect failed: $e\n") }
+            }
+
+            override fun onRcDisconnect() {
+                runOnUiThread { tvLog.append("RC disconnected.\n") }
+            }
+        })
+        RCSDKManager.setMainThreadCallBack(true)
+        RCSDKManager.connectToRC()
+    }
+
+    private fun startClock() {
         val handler = Handler(Looper.getMainLooper())
         handler.post(object : Runnable {
             override fun run() {
@@ -67,48 +143,29 @@ class MainActivity : AppCompatActivity() {
                 handler.postDelayed(this, 1000)
             }
         })
-
-        // 清除日志按钮
-        findViewById<Button>(R.id.btnLogClear)?.setOnClickListener { tvLog.text = "" }
-        findViewById<Button>(R.id.btnConnect)?.setOnClickListener {
-            Toast.makeText(this, "已升级为自动无线连接，无需手动开启", Toast.LENGTH_SHORT).show()
-        }
-
-        // 3. 初始化云卓 SDK 并建立连接
-        RCSDKManager.initSDK(this, object : SDKManagerCallBack {
-            override fun onRcConnected() {
-                runOnUiThread { tvLog.append("✅ 遥控器底层握手成功！\n") }
-                setupPipeline()           // 握手成功后，建立无线管道
-                startJoystickPolling()    // 启动雷达轮询器读取摇杆
-            }
-            override fun onRcConnectFail(e: SkyException?) {
-                runOnUiThread { tvLog.append("❌ 遥控器握手失败: $e\n") }
-            }
-            override fun onRcDisconnect() { }
-        })
-        RCSDKManager.setMainThreadCallBack(true)
-        RCSDKManager.connectToRC()
     }
 
-    // ==========================================
-    // 📡 核心通信网络：建立管道与起搏心跳
-    // ==========================================
     private fun setupPipeline() {
         myPipeline = PipelineManager.createPipeline(Uart.UART0)
         myPipeline?.onCommListener = object : CommListener {
             override fun onConnectSuccess() {
-                runOnUiThread { tvLog.append("📡 无线数传管道已打通！\n") }
-                startHeartbeat() // 管道一通，立刻开始发送心跳！
+                runOnUiThread { tvLog.append("Wireless pipeline connected.\n") }
+                startHeartbeat()
             }
+
             override fun onConnectFail(e: SkyException) {
-                runOnUiThread { tvLog.append("❌ 管道连接失败: $e\n") }
+                runOnUiThread { tvLog.append("Pipeline connect failed: $e\n") }
             }
+
             override fun onDisconnect() {
-                runOnUiThread { tvLog.append("⚠️ 管道断开连接\n") }
-                heartbeatTimer?.cancel() // 断开时停止心跳
+                runOnUiThread {
+                    tvLog.append("Pipeline disconnected.\n")
+                    refreshTopStatus()
+                }
+                heartbeatTimer?.cancel()
             }
+
             override fun onReadData(bytes: ByteArray) {
-                // 将接收机发回来的数据喂给解析器更新 UI
                 mavlinkParser.feedData(bytes)
             }
         }
@@ -117,87 +174,191 @@ class MainActivity : AppCompatActivity() {
 
     private fun startHeartbeat() {
         heartbeatTimer?.cancel()
-        heartbeatTimer = java.util.Timer()
-        heartbeatTimer?.scheduleAtFixedRate(object : java.util.TimerTask() {
+        heartbeatTimer = Timer()
+        heartbeatTimer?.scheduleAtFixedRate(object : TimerTask() {
             override fun run() {
-                sendMotorCommand(700f) // 每 500ms 发送一次心跳
+                sendHeartbeat()
+                checkHeartbeatTimeout()
             }
         }, 0, 500)
     }
 
-    // ==========================================
-    // 🎮 双轨制摇杆雷达：捕捉动作与指令下发
-    // ==========================================
+    private fun sendHeartbeat() {
+        sendCommandLong(
+            command = CMD_MOTOR_CONTROL,
+            param1 = HEARTBEAT_PARAM
+        )
+    }
+
+    private fun checkHeartbeatTimeout() {
+        val hasAck = lastHeartbeatAckTime > 0L
+        val timedOut = hasAck && System.currentTimeMillis() - lastHeartbeatAckTime > HEARTBEAT_TIMEOUT_MS
+        if (timedOut && !heartbeatTimeoutLogged) {
+            heartbeatTimeoutLogged = true
+            runOnUiThread {
+                tvLog.append("Heartbeat timeout: board did not ack.\n")
+                refreshTopStatus()
+            }
+        } else if (!timedOut) {
+            runOnUiThread { refreshTopStatus() }
+        }
+    }
+
     private fun startJoystickPolling() {
-        java.util.Timer().scheduleAtFixedRate(object : java.util.TimerTask() {
+        joystickTimer?.cancel()
+        joystickTimer = Timer()
+        joystickTimer?.scheduleAtFixedRate(object : TimerTask() {
             override fun run() {
                 KeyManager.get(RemoteControllerKey.KeyChannels, object : CompletionCallbackWith<IntArray> {
                     override fun onSuccess(channels: IntArray?) {
-                        if (channels != null && channels.size >= 6) {
+                        if (channels == null || channels.size < 12) return
 
-                            // Measured RC channels:
-                            // CH3 left stick vertical: 1050 bottom, 1500 center, 1950 top.
-                            // CH2 right stick vertical: 1050 top, 1500 center, 1950 bottom.
-                            // CH12 right dial: 1050 top, 1950 clockwise bottom.
-                            val ch3Raw = channels[2] // 获取左摇杆上下方向
-
-                            val currentMotorState = when {
-                                ch3Raw > 1600 -> 101f // 前进
-                                ch3Raw < 1400 -> 102f // 后退
-                                else -> 100f          // 停止
-                            }
-
-                            if (currentMotorState != lastMotorState) {
-                                sendMotorCommand(currentMotorState)
-                                lastMotorState = currentMotorState
-
-                                val action = if (currentMotorState == 101f) "🚀 猛烈前进 (101)" else if (currentMotorState == 102f) "🔙 倒车后退 (102)" else "⏹️ 紧急刹车 (100)"
-                                android.util.Log.e("RobotAction", action)
-                            }
-                        }
+                        // Measured RC channels:
+                        // CH3 left stick vertical: 1050 bottom, 1500 center, 1950 top.
+                        // CH2 right stick vertical: 1050 top, 1500 center, 1950 bottom.
+                        // CH12 right dial: 1050 top, 1950 clockwise bottom.
+                        handleDriveChannel(channels[2])
+                        handleLiftChannels(channels[1], channels[11])
+                        runOnUiThread { refreshTopStatus() }
                     }
+
                     override fun onFailure(e: SkyException) {}
                 })
             }
         }, 0, 100)
     }
 
-    // ==========================================
-    // 🚀 终极翻译官：发送 MAVLink
-    // ==========================================
-    private fun sendMotorCommand(paramValue: Float) {
+    private fun handleDriveChannel(ch3Raw: Int) {
+        val nextCommand: Int
+        val nextSpeed: Float
+        when {
+            ch3Raw > RC_DEAD_HIGH -> {
+                nextCommand = MOTOR_FORWARD
+                nextSpeed = mapChannelToRange(ch3Raw, RC_DEAD_HIGH, RC_HIGH, 0f, MOTOR_MAX_RPM)
+            }
+            ch3Raw < RC_DEAD_LOW -> {
+                nextCommand = MOTOR_BACKWARD
+                nextSpeed = mapChannelToRange(ch3Raw, RC_DEAD_LOW, RC_LOW, 0f, MOTOR_MAX_RPM)
+            }
+            else -> {
+                nextCommand = MOTOR_STOP
+                nextSpeed = 0f
+            }
+        }
+
+        motorCommand = nextCommand
+        motorSpeedRpm = nextSpeed
+        sendMotorCommand(nextCommand, nextSpeed)
+    }
+
+    private fun handleLiftChannels(ch2Raw: Int, ch12Raw: Int) {
+        liftSpeedRpm = mapChannelToRange(ch12Raw, RC_LOW, RC_HIGH, 0f, LIFT_MAX_RPM)
+
+        val delta = when {
+            ch2Raw < RC_DEAD_LOW -> mapChannelToRange(ch2Raw, RC_DEAD_LOW, RC_LOW, 0f, LIFT_MAX_STEP_MM_PER_TICK)
+            ch2Raw > RC_DEAD_HIGH -> -mapChannelToRange(ch2Raw, RC_DEAD_HIGH, RC_HIGH, 0f, LIFT_MAX_STEP_MM_PER_TICK)
+            else -> 0f
+        }
+
+        if (delta == 0f) return
+
+        liftTargetPositionMm = (liftTargetPositionMm + delta).coerceIn(LIFT_MIN_POSITION_MM, LIFT_MAX_POSITION_MM)
+        if (lastSentLiftPositionMm.isNaN() || abs(liftTargetPositionMm - lastSentLiftPositionMm) >= 0.05f) {
+            sendStepperPosition(liftMotorId, liftTargetPositionMm, liftSpeedRpm)
+            lastSentLiftPositionMm = liftTargetPositionMm
+        }
+    }
+
+    private fun mapChannelToRange(
+        value: Int,
+        inputStart: Int,
+        inputEnd: Int,
+        outputStart: Float,
+        outputEnd: Float
+    ): Float {
+        val denom = (inputEnd - inputStart).toFloat()
+        if (denom == 0f) return outputStart
+        val ratio = ((value - inputStart) / denom).coerceIn(0f, 1f)
+        return outputStart + ratio * (outputEnd - outputStart)
+    }
+
+    private fun sendMotorCommand(code: Int, speedRpm: Float) {
+        sendCommandLong(
+            command = CMD_MOTOR_CONTROL,
+            param1 = code.toFloat(),
+            param2 = speedRpm
+        )
+    }
+
+    private fun sendStepperPosition(motorId: Int, positionMm: Float, speedRpm: Float) {
+        sendCommandLong(
+            command = CMD_STEPPER_CONTROL,
+            param1 = motorId.toFloat(),
+            param2 = positionMm,
+            param3 = speedRpm
+        )
+    }
+
+    fun sendStepperHome(motorId: Int = liftMotorId) {
+        sendCommandLong(
+            command = CMD_STEPPER_HOME,
+            param1 = motorId.toFloat()
+        )
+    }
+
+    fun setLiftMotorId(motorId: Int) {
+        liftMotorId = motorId.coerceIn(0, 2)
+        runOnUiThread { refreshTopStatus() }
+    }
+
+    fun setLiftTargetPosition(positionMm: Float) {
+        liftTargetPositionMm = positionMm.coerceIn(LIFT_MIN_POSITION_MM, LIFT_MAX_POSITION_MM)
+        sendStepperPosition(liftMotorId, liftTargetPositionMm, liftSpeedRpm)
+        lastSentLiftPositionMm = liftTargetPositionMm
+        runOnUiThread { refreshTopStatus() }
+    }
+
+    fun setLiftSpeed(speedRpm: Float) {
+        liftSpeedRpm = speedRpm.coerceIn(0f, LIFT_MAX_RPM)
+        runOnUiThread { refreshTopStatus() }
+    }
+
+    private fun sendCommandLong(
+        command: Int,
+        param1: Float = 0f,
+        param2: Float = 0f,
+        param3: Float = 0f,
+        param4: Float = 0f,
+        param5: Float = 0f,
+        param6: Float = 0f,
+        param7: Float = 0f
+    ) {
         if (myPipeline == null) return
 
-        val payloadLen = 33
-        val msgId = 76 // COMMAND_LONG
-        val crcExtra = 152.toByte()
-
-        val buffer = java.nio.ByteBuffer.allocate(6 + payloadLen + 2)
-        buffer.order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        val buffer = ByteBuffer.allocate(6 + MAVLINK_COMMAND_LONG_PAYLOAD_LEN + 2)
+        buffer.order(ByteOrder.LITTLE_ENDIAN)
 
         buffer.put(0xFE.toByte())
-        buffer.put(payloadLen.toByte())
+        buffer.put(MAVLINK_COMMAND_LONG_PAYLOAD_LEN.toByte())
         buffer.put((mavlinkSeq++ and 0xFF).toByte())
         buffer.put(255.toByte())
         buffer.put(0.toByte())
-        buffer.put(msgId.toByte())
-
-        buffer.putFloat(paramValue)
-        buffer.putFloat(0f)
-        buffer.putFloat(0f)
-        buffer.putFloat(0f)
-        buffer.putFloat(0f)
-        buffer.putFloat(0f)
-        buffer.putFloat(0f)
-        buffer.putShort(31025.toShort())
+        buffer.put(MAVLINK_COMMAND_LONG_MSG_ID.toByte())
+        buffer.putFloat(param1)
+        buffer.putFloat(param2)
+        buffer.putFloat(param3)
+        buffer.putFloat(param4)
+        buffer.putFloat(param5)
+        buffer.putFloat(param6)
+        buffer.putFloat(param7)
+        buffer.putShort(command.toShort())
         buffer.put(1.toByte())
         buffer.put(1.toByte())
         buffer.put(0.toByte())
 
         val bytes = buffer.array()
-        val crc = calculateMavlinkCRC(bytes, bytes.size - 2, crcExtra)
+        val crc = calculateMavlinkCRC(bytes, bytes.size - 2, MAVLINK_COMMAND_LONG_CRC_EXTRA)
         buffer.putShort(crc.toShort())
-
         myPipeline?.writeData(buffer.array())
     }
 
@@ -217,31 +378,64 @@ class MainActivity : AppCompatActivity() {
         return crc and 0xFFFF
     }
 
-    // ==========================================
-    // 📊 数据解析与 UI 刷新
-    // ==========================================
     fun updateRobotStatus(
-        batteryVol: Float, batteryPct: Int, currentA: Float,
-        pitchAngle: Float, pingMs: Int,
-        tempOdd: Float, tempEven: Float, wireDiameter: Float
+        batteryVol: Float,
+        batteryPct: Int,
+        currentA: Float,
+        pitchAngle: Float,
+        pingMs: Int,
+        tempOdd: Float,
+        tempEven: Float,
+        wireDiameter: Float
     ) {
-        runOnUiThread {
-            tvTopStatus.text = String.format(
-                Locale.getDefault(),
-                "机器人: KR-ZY 03 | \uD83D\uDD0B %.1fV/%d%% | ⚡ %.1fA | 坡度: %.1f° | PING: %dms | \uD83C\uDF21\uFE0F奇:%.1f℃ 偶:%.1f℃ | 线径: %.1fmm",
-                batteryVol, batteryPct, currentA, pitchAngle, pingMs, tempOdd, tempEven, wireDiameter
-            )
+        this.batteryVol = batteryVol
+        this.batteryPct = batteryPct
+        this.currentA = currentA
+        this.pitchAngle = pitchAngle
+        this.pingMs = pingMs
+        this.tempOdd = tempOdd
+        this.tempEven = tempEven
+        this.wireDiameter = wireDiameter
+        runOnUiThread { refreshTopStatus() }
+    }
+
+    private fun refreshTopStatus() {
+        val heartbeatText = when {
+            lastHeartbeatAckTime == 0L -> "HB: WAIT"
+            System.currentTimeMillis() - lastHeartbeatAckTime > HEARTBEAT_TIMEOUT_MS -> "HB: TIMEOUT"
+            else -> "HB: OK"
         }
+        val motorText = when (motorCommand) {
+            MOTOR_FORWARD -> "F ${motorSpeedRpm.roundToInt()}rpm"
+            MOTOR_BACKWARD -> "B ${motorSpeedRpm.roundToInt()}rpm"
+            else -> "STOP"
+        }
+        tvTopStatus.text = String.format(
+            Locale.getDefault(),
+            "KR-ZY03 | %s | Motor:%s | Lift Pos:%.1fmm | Lift Speed:%drpm",
+            heartbeatText,
+            motorText,
+            liftTargetPositionMm,
+            liftSpeedRpm.roundToInt()
+        )
     }
 
     private val mavlinkParser = SimpleMavlinkParser(
-        onCommandReceived = { command, params ->
-            if (command == 31025) {
+        onCommandReceived = commandHandler@{ command, params ->
+            if (command == CMD_MOTOR_CONTROL) {
+                val param1 = params[0]
+                if (abs(param1 - HEARTBEAT_ACK) < 0.1f) {
+                    lastHeartbeatAckTime = System.currentTimeMillis()
+                    heartbeatTimeoutLogged = false
+                    runOnUiThread { refreshTopStatus() }
+                    return@commandHandler
+                }
+
                 runOnUiThread {
                     val waveValue = params[0]
                     val currentFragment = supportFragmentManager.findFragmentById(R.id.fragmentContainer)
                     if (currentFragment is DetectFragment) currentFragment.updateGraph(waveValue)
-                    if (waveValue >= 95) tvLog.append("⚠️ 严重负载警告: ${waveValue.toInt()}%\n")
+                    if (waveValue >= 95) tvLog.append("High load warning: ${waveValue.toInt()}%\n")
 
                     updateRobotStatus(
                         batteryVol = params[1],
@@ -271,17 +465,22 @@ class MainActivity : AppCompatActivity() {
         private val onGpsReceived: (Double, Double) -> Unit
     ) {
         private val buffer = mutableListOf<Byte>()
+
         fun feedData(data: ByteArray) {
             buffer.addAll(data.toList())
             parse()
         }
+
         private fun parse() {
             while (buffer.isNotEmpty()) {
                 val start = buffer.indexOfFirst { b: Byte ->
                     val i = b.toInt() and 0xFF
                     i == 0xFD || i == 0xFE
                 }
-                if (start == -1) { buffer.clear(); return }
+                if (start == -1) {
+                    buffer.clear()
+                    return
+                }
                 if (start > 0) buffer.subList(0, start).clear()
                 if (buffer.size < 12) return
 
@@ -292,9 +491,11 @@ class MainActivity : AppCompatActivity() {
 
                 val msgId = if (isV2) {
                     (buffer[7].toInt() and 0xFF) or ((buffer[8].toInt() and 0xFF) shl 8)
-                } else (buffer[5].toInt() and 0xFF)
+                } else {
+                    buffer[5].toInt() and 0xFF
+                }
 
-                if (msgId == 76 && len >= 30) {
+                if (msgId == MAVLINK_COMMAND_LONG_MSG_ID && len >= 30) {
                     val offset = if (isV2) 10 else 6
                     val payload = buffer.subList(offset, offset + len).toByteArray()
                     val params = FloatArray(7)
@@ -303,16 +504,13 @@ class MainActivity : AppCompatActivity() {
                     }
                     val cmd = ByteBuffer.wrap(payload, 28, 2).order(ByteOrder.LITTLE_ENDIAN).short.toInt() and 0xFFFF
                     onCommandReceived(cmd, params)
-                }
-                else if (msgId == 33) {
+                } else if (msgId == 33) {
                     val offset = if (isV2) 10 else 6
                     val payload = buffer.subList(offset, offset + len).toByteArray()
                     if (payload.size >= 12) {
                         val latInt = ByteBuffer.wrap(payload, 4, 4).order(ByteOrder.LITTLE_ENDIAN).int
                         val lonInt = ByteBuffer.wrap(payload, 8, 4).order(ByteOrder.LITTLE_ENDIAN).int
-                        val lat = latInt / 1e7
-                        val lon = lonInt / 1e7
-                        onGpsReceived(lat, lon)
+                        onGpsReceived(latInt / 1e7, lonInt / 1e7)
                     }
                 }
                 buffer.subList(0, totalLen).clear()
@@ -320,9 +518,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // ==========================================
-    // 🎞️ 其他工具功能 (视频、截图、生命周期)
-    // ==========================================
     private fun setupVideoTools() {
         findViewById<Button>(R.id.btnRotate)?.setOnClickListener {
             videoView.rotation = (videoView.rotation + 90f) % 360f
@@ -332,19 +527,19 @@ class MainActivity : AppCompatActivity() {
             val btn = view as Button
             isRecording = !isRecording
             if (isRecording) {
-                btn.text = "停止"
-                btn.setBackgroundColor(android.graphics.Color.RED)
-                tvLog.append("⏺️ 正在录制巡检视频...\n")
+                btn.text = "Stop"
+                btn.setBackgroundColor(Color.RED)
+                tvLog.append("Recording started.\n")
             } else {
-                btn.text = "录像"
-                btn.setBackgroundColor(android.graphics.Color.parseColor("#1565C0"))
-                tvLog.append("✅ 录像已保存至相册\n")
+                btn.text = "Record"
+                btn.setBackgroundColor(Color.parseColor("#1565C0"))
+                tvLog.append("Recording stopped.\n")
             }
         }
     }
 
     private fun takeScreenshot() {
-        Toast.makeText(this, "截图功能适配中...", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Screenshot is not adapted yet.", Toast.LENGTH_SHORT).show()
     }
 
     private fun setupVideo() {
@@ -353,7 +548,7 @@ class MainActivity : AppCompatActivity() {
             videoView.usingMediaCodec = true
             videoView.start()
         } catch (e: Exception) {
-            tvLog.append("⚠️ 视频流初始化失败: ${e.message}\n")
+            tvLog.append("Video stream init failed: ${e.message}\n")
         }
     }
 
@@ -371,8 +566,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun switchFragment(fragment: Fragment, activeButton: Button?) {
         supportFragmentManager.beginTransaction().replace(R.id.fragmentContainer, fragment).commit()
-        val activeColor = android.graphics.Color.parseColor("#2E7D32")
-        val inactiveColor = android.graphics.Color.parseColor("#1565C0")
+        val activeColor = Color.parseColor("#2E7D32")
+        val inactiveColor = Color.parseColor("#1565C0")
         findViewById<Button>(R.id.btnTabWalk)?.setBackgroundColor(inactiveColor)
         findViewById<Button>(R.id.btnTabDetect)?.setBackgroundColor(inactiveColor)
         findViewById<Button>(R.id.btnTabLocation)?.setBackgroundColor(inactiveColor)
@@ -381,8 +576,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) {
-            val code = event.keyCode
-            android.util.Log.e("JoystickTest", "【物理按键】被按下，真实代号是：$code")
+            android.util.Log.e("JoystickTest", "Physical key code: ${event.keyCode}")
         }
         return super.dispatchKeyEvent(event)
     }
@@ -395,6 +589,7 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         videoView.stop()
         heartbeatTimer?.cancel()
+        joystickTimer?.cancel()
         myPipeline?.let { PipelineManager.disconnectPipeline(it) }
         RCSDKManager.disconnectRC()
     }

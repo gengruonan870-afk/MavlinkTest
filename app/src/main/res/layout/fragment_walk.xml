@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="—— 手动行走控制 ——" android:textColor="#88CCFF" android:gravity="center" android:layout_marginTop="10dp" android:textSize="14sp" android:textStyle="bold"/>
+
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="15dp">
+        <Button android:id="@+id/btnWalkForward" android:layout_width="0dp" android:layout_weight="1" android:layout_height="90dp" android:text="向前 (Forward)" android:backgroundTint="#00695C" android:textSize="16sp"/>
+        <Button android:id="@+id/btnWalkBackward" android:layout_width="0dp" android:layout_weight="1" android:layout_height="90dp" android:text="向后 (Backward)" android:backgroundTint="#00695C" android:layout_marginStart="8dp" android:textSize="16sp"/>
+    </LinearLayout>
+
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="—— 行走速度调优 ——" android:textColor="#88CCFF" android:gravity="center" android:layout_marginTop="40dp" android:textSize="14sp" android:textStyle="bold"/>
+
+    <SeekBar android:id="@+id/sbWalkSpeed" android:layout_width="match_parent" android:layout_height="wrap_content" android:max="100" android:progress="50" android:layout_marginTop="20dp" android:thumbTint="#00FFFF" android:progressTint="#00FFFF"/>
+
+    <TextView android:id="@+id/tvCurrentSpeed" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="当前设定速度: 50%" android:textColor="#FFFFFF" android:gravity="center" android:layout_marginTop="10dp" android:textSize="12sp"/>
+
+</LinearLayout>

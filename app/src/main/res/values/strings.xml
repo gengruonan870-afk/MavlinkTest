@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">MavlinkTest</string>
+    <string name="sensor_app_name">传感器测试</string>
 </resources>

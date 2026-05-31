@@ -43,6 +43,16 @@
         <activity
             android:name=".LoopbackTestActivity"
             android:exported="false" />
+
+        <activity
+            android:name=".SensorDataTestActivity"
+            android:exported="true"
+            android:label="@string/sensor_app_name">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
     </application>
 
 </manifest>

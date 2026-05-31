@@ -1,0 +1,307 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#050A1A"
+    android:orientation="vertical"
+    android:padding="14dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="传感器数据测试页"
+                android:textColor="#00FFFF"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tvSensorStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="3dp"
+                android:text="状态: 等待认证"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <EditText
+            android:id="@+id/etSensorSerial"
+            android:layout_width="180dp"
+            android:layout_height="42dp"
+            android:layout_marginStart="12dp"
+            android:backgroundTint="#00FFFF"
+            android:hint="检测编号"
+            android:inputType="text"
+            android:maxLines="1"
+            android:text="006A0001"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#88CCFF"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/btnSensorAuth"
+            android:layout_width="86dp"
+            android:layout_height="42dp"
+            android:layout_marginStart="8dp"
+            android:backgroundTint="#1565C0"
+            android:text="认证"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/btnSensorFetch"
+            android:layout_width="106dp"
+            android:layout_height="42dp"
+            android:layout_marginStart="8dp"
+            android:backgroundTint="#2E7D32"
+            android:text="获取数据"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <ProgressBar
+        android:id="@+id/progressSensor"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_width="match_parent"
+        android:layout_height="4dp"
+        android:layout_marginTop="8dp"
+        android:indeterminate="true"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="42dp"
+        android:layout_marginTop="10dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnShowChart"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:backgroundTint="#2E7D32"
+            android:text="六路曲线"
+            android:textSize="13sp" />
+
+        <Button
+            android:id="@+id/btnShowResults"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:backgroundTint="#1565C0"
+            android:text="损伤列表"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/panelChart"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="10dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/tvChartInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="原始数据: 等待拉取"
+            android:textColor="#88CCFF"
+            android:textSize="13sp" />
+
+        <com.example.mavlinktest.SensorLineChartView
+            android:id="@+id/sensorChartView"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="6dp"
+            android:layout_weight="1"
+            android:background="#050A1A" />
+
+        <SeekBar
+            android:id="@+id/seekChartPan"
+            android:layout_width="match_parent"
+            android:layout_height="36dp"
+            android:max="1000"
+            android:progress="0"
+            android:progressTint="#00FFFF"
+            android:thumbTint="#00FFFF" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="36dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <CheckBox
+                android:id="@+id/cbSensor1"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:checked="true"
+                android:text="S1"
+                android:textColor="#E74C3C"
+                android:textSize="12sp" />
+
+            <CheckBox
+                android:id="@+id/cbSensor2"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:checked="true"
+                android:text="S2"
+                android:textColor="#3498DB"
+                android:textSize="12sp" />
+
+            <CheckBox
+                android:id="@+id/cbSensor3"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:checked="true"
+                android:text="S3"
+                android:textColor="#2ECC71"
+                android:textSize="12sp" />
+
+            <CheckBox
+                android:id="@+id/cbSensor4"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:checked="true"
+                android:text="S4"
+                android:textColor="#F39C12"
+                android:textSize="12sp" />
+
+            <CheckBox
+                android:id="@+id/cbSensor5"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:checked="true"
+                android:text="S5"
+                android:textColor="#9B59B6"
+                android:textSize="12sp" />
+
+            <CheckBox
+                android:id="@+id/cbSensor6"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:checked="true"
+                android:text="S6"
+                android:textColor="#1ABC9C"
+                android:textSize="12sp" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/panelResults"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="10dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="点击表头可排序，颜色表示损伤程度"
+                android:textColor="#88CCFF"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tvDamageInfo"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="损伤结果: 尚未获取"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="8dp"
+            android:layout_weight="1"
+            android:orientation="horizontal">
+
+            <ScrollView
+                android:id="@+id/scrollResults"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1.6">
+
+                <HorizontalScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content">
+
+                    <TableLayout
+                        android:id="@+id/tableDamageResults"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:stretchColumns="*" />
+                </HorizontalScrollView>
+            </ScrollView>
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_marginStart="10dp"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="接口返回 /api/damageResult"
+                    android:textColor="#88CCFF"
+                    android:textSize="12sp"
+                    android:textStyle="bold" />
+
+                <ScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_marginTop="6dp"
+                    android:layout_weight="1"
+                    android:background="#0A1128">
+
+                    <HorizontalScrollView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content">
+
+                        <TextView
+                            android:id="@+id/tvDamageRawJson"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:minWidth="420dp"
+                            android:padding="8dp"
+                            android:text="尚未获取"
+                            android:textColor="#4CAF50"
+                            android:textIsSelectable="true"
+                            android:textSize="10sp"
+                            android:typeface="monospace" />
+                    </HorizontalScrollView>
+                </ScrollView>
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

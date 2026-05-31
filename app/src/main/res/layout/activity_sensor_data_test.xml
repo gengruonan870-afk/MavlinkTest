@@ -215,6 +215,15 @@
             android:textColor="#88CCFF"
             android:textSize="12sp" />
 
+        <TextView
+            android:id="@+id/tvDamageInfo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="损伤结果: 尚未获取"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp" />
+
         <ScrollView
             android:id="@+id/scrollResults"
             android:layout_width="match_parent"

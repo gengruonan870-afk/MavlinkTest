@@ -61,6 +61,7 @@ class SensorDataTestActivity : AppCompatActivity() {
     private lateinit var chartView: SensorLineChartView
     private lateinit var chartSeekBar: SeekBar
     private lateinit var progressBar: ProgressBar
+    private lateinit var tvDamageInfo: TextView
     private lateinit var resultTable: TableLayout
     private lateinit var resultScroll: ScrollView
 
@@ -100,6 +101,7 @@ class SensorDataTestActivity : AppCompatActivity() {
         chartView = findViewById(R.id.sensorChartView)
         chartSeekBar = findViewById(R.id.seekChartPan)
         progressBar = findViewById(R.id.progressSensor)
+        tvDamageInfo = findViewById(R.id.tvDamageInfo)
         resultTable = findViewById(R.id.tableDamageResults)
         resultScroll = findViewById(R.id.scrollResults)
     }
@@ -109,6 +111,7 @@ class SensorDataTestActivity : AppCompatActivity() {
         btnFetch.setOnClickListener { fetchAllData() }
         btnShowChart.setOnClickListener { showChartPanel() }
         btnShowResults.setOnClickListener { showResultPanel() }
+        renderDamageTable()
         chartView.onViewportChanged = { ratio ->
             syncingSeekBar = true
             chartSeekBar.progress = (ratio * chartSeekBar.max).toInt().coerceIn(0, chartSeekBar.max)
@@ -187,6 +190,7 @@ class SensorDataTestActivity : AppCompatActivity() {
                     chartSeekBar.progress = 0
                     tvChartInfo.text = "原始数据: ${samples.size} 行，六路传感器"
                     damageRecords = records.toMutableList()
+                    tvDamageInfo.text = "损伤结果: 共 ${records.size} 条"
                     renderDamageTable()
                     setLoading(false, "数据拉取完成: 曲线 ${samples.size} 行，损伤 ${records.size} 条")
                     showChartPanel()
@@ -294,6 +298,10 @@ class SensorDataTestActivity : AppCompatActivity() {
     private fun renderDamageTable() {
         resultTable.removeAllViews()
         addHeaderRow()
+        if (damageRecords.isEmpty()) {
+            addEmptyDamageRow()
+            return
+        }
         val sorted = damageRecords.sortedWith(compareBy<DamageRecord> { sortValue(it, currentSortKey) })
             .let { if (sortDescending) it.reversed() else it }
         sorted.forEachIndexed { index, record -> addDamageRow(index, record) }
@@ -307,6 +315,21 @@ class SensorDataTestActivity : AppCompatActivity() {
         addHeaderCell(row, "脉冲计数", SortKey.POSITION)
         addHeaderCell(row, "损伤等级", SortKey.DAMAGE_TYPE)
         addHeaderCell(row, "损伤量(%)", SortKey.VALUE)
+        resultTable.addView(row)
+    }
+
+    private fun addEmptyDamageRow() {
+        val row = TableRow(this).apply {
+            setBackgroundColor(Color.rgb(10, 17, 40))
+        }
+        val tv = TextView(this).apply {
+            text = "暂无损伤结果。请先点击“获取数据”；如果获取后仍为空，说明接口当前未返回损伤记录。"
+            setTextColor(Color.rgb(136, 204, 255))
+            textSize = 12f
+            minWidth = 780
+            setPadding(12, 18, 12, 18)
+        }
+        row.addView(tv)
         resultTable.addView(row)
     }
 

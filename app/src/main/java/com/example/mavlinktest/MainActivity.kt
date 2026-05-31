@@ -211,14 +211,19 @@ class MainActivity : AppCompatActivity() {
             override fun run() {
                 KeyManager.get(RemoteControllerKey.KeyChannels, object : CompletionCallbackWith<IntArray> {
                     override fun onSuccess(channels: IntArray?) {
-                        if (channels == null || channels.size < 12) return
+                        if (channels == null) return
 
                         // Measured RC channels:
                         // CH3 left stick vertical: 1050 bottom, 1500 center, 1950 top.
                         // CH2 right stick vertical: 1050 top, 1500 center, 1950 bottom.
                         // CH12 right dial: 1050 top, 1950 clockwise bottom.
-                        handleDriveChannel(channels[2])
-                        handleLiftChannels(channels[1], channels[11])
+                        if (channels.size > 2) {
+                            handleDriveChannel(channels[2])
+                        }
+                        if (channels.size > 1) {
+                            val ch12Raw = channels.getOrNull(11)
+                            handleLiftChannels(channels[1], ch12Raw)
+                        }
                         runOnUiThread { refreshTopStatus() }
                     }
 
@@ -241,7 +246,12 @@ class MainActivity : AppCompatActivity() {
                 nextSpeed = mapChannelToRange(ch3Raw, RC_DEAD_LOW, RC_LOW, 0f, MOTOR_MAX_RPM)
             }
             else -> {
-                nextCommand = MOTOR_STOP
+                // 回中时保持之前的方向，只把速度设为 0，避免发送 100 急停伤电机。
+                nextCommand = if (motorCommand == MOTOR_FORWARD || motorCommand == MOTOR_BACKWARD) {
+                    motorCommand
+                } else {
+                    MOTOR_STOP
+                }
                 nextSpeed = 0f
             }
         }
@@ -251,8 +261,10 @@ class MainActivity : AppCompatActivity() {
         sendMotorCommand(nextCommand, nextSpeed)
     }
 
-    private fun handleLiftChannels(ch2Raw: Int, ch12Raw: Int) {
-        liftSpeedRpm = mapChannelToRange(ch12Raw, RC_LOW, RC_HIGH, 0f, LIFT_MAX_RPM)
+    private fun handleLiftChannels(ch2Raw: Int, ch12Raw: Int?) {
+        if (ch12Raw != null) {
+            liftSpeedRpm = mapChannelToRange(ch12Raw, RC_LOW, RC_HIGH, 0f, LIFT_MAX_RPM)
+        }
 
         val delta = when {
             ch2Raw < RC_DEAD_LOW -> mapChannelToRange(ch2Raw, RC_DEAD_LOW, RC_LOW, 0f, LIFT_MAX_STEP_MM_PER_TICK)
@@ -322,6 +334,10 @@ class MainActivity : AppCompatActivity() {
         liftSpeedRpm = speedRpm.coerceIn(0f, LIFT_MAX_RPM)
         runOnUiThread { refreshTopStatus() }
     }
+
+    fun getLiftTargetPositionMm(): Float = liftTargetPositionMm
+
+    fun getLiftSpeedRpm(): Float = liftSpeedRpm
 
     private fun sendCommandLong(
         command: Int,
@@ -401,23 +417,27 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshTopStatus() {
         val heartbeatText = when {
-            lastHeartbeatAckTime == 0L -> "HB: WAIT"
-            System.currentTimeMillis() - lastHeartbeatAckTime > HEARTBEAT_TIMEOUT_MS -> "HB: TIMEOUT"
-            else -> "HB: OK"
+            lastHeartbeatAckTime == 0L -> "等待"
+            System.currentTimeMillis() - lastHeartbeatAckTime > HEARTBEAT_TIMEOUT_MS -> "超时"
+            else -> "正常"
         }
         val motorText = when (motorCommand) {
-            MOTOR_FORWARD -> "F ${motorSpeedRpm.roundToInt()}rpm"
-            MOTOR_BACKWARD -> "B ${motorSpeedRpm.roundToInt()}rpm"
-            else -> "STOP"
+            MOTOR_FORWARD -> "前进 ${motorSpeedRpm.roundToInt()}rpm"
+            MOTOR_BACKWARD -> "后退 ${motorSpeedRpm.roundToInt()}rpm"
+            else -> "停止"
         }
         tvTopStatus.text = String.format(
             Locale.getDefault(),
-            "KR-ZY03 | %s | Motor:%s | Lift Pos:%.1fmm | Lift Speed:%drpm",
+            "KR-ZY03 | 心跳:%s | 电机:%s | 升降目标:%.1fmm | 升降速度:%drpm",
             heartbeatText,
             motorText,
             liftTargetPositionMm,
             liftSpeedRpm.roundToInt()
         )
+        val currentFragment = supportFragmentManager.findFragmentById(R.id.fragmentContainer)
+        if (currentFragment is DetectFragment) {
+            currentFragment.updateLiftStatus(liftTargetPositionMm, liftSpeedRpm)
+        }
     }
 
     private val mavlinkParser = SimpleMavlinkParser(
@@ -544,7 +564,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupVideo() {
         try {
-            videoView.url = "rtsp://192.168.144.25:8554/main.264"
+            videoView.url = "rtsp://192.168.144.108:554/stream=0"
             videoView.usingMediaCodec = true
             videoView.start()
         } catch (e: Exception) {

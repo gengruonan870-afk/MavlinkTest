@@ -62,6 +62,7 @@ class SensorDataTestActivity : AppCompatActivity() {
     private lateinit var chartSeekBar: SeekBar
     private lateinit var progressBar: ProgressBar
     private lateinit var tvDamageInfo: TextView
+    private lateinit var tvDamageRawJson: TextView
     private lateinit var resultTable: TableLayout
     private lateinit var resultScroll: ScrollView
 
@@ -102,6 +103,7 @@ class SensorDataTestActivity : AppCompatActivity() {
         chartSeekBar = findViewById(R.id.seekChartPan)
         progressBar = findViewById(R.id.progressSensor)
         tvDamageInfo = findViewById(R.id.tvDamageInfo)
+        tvDamageRawJson = findViewById(R.id.tvDamageRawJson)
         resultTable = findViewById(R.id.tableDamageResults)
         resultScroll = findViewById(R.id.scrollResults)
     }
@@ -191,6 +193,7 @@ class SensorDataTestActivity : AppCompatActivity() {
                     tvChartInfo.text = "原始数据: ${samples.size} 行，六路传感器"
                     damageRecords = records.toMutableList()
                     tvDamageInfo.text = "损伤结果: 共 ${records.size} 条"
+                    tvDamageRawJson.text = formatJsonForDisplay(damageText)
                     renderDamageTable()
                     setLoading(false, "数据拉取完成: 曲线 ${samples.size} 行，损伤 ${records.size} 条")
                     showChartPanel()
@@ -440,6 +443,14 @@ class SensorDataTestActivity : AppCompatActivity() {
     private fun JSONObject.optNullableDouble(name: String): Double? {
         if (!has(name) || isNull(name)) return null
         return runCatching { getDouble(name) }.getOrNull()
+    }
+
+    private fun formatJsonForDisplay(text: String): String {
+        return runCatching {
+            JSONObject(text).toString(2)
+        }.getOrElse {
+            text
+        }
     }
 
     private fun Double.formatNumber(): String = String.format(Locale.getDefault(), "%.3f", this)

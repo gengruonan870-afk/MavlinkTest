@@ -46,13 +46,8 @@
 
         <activity
             android:name=".SensorDataTestActivity"
-            android:exported="true"
-            android:label="@string/sensor_app_name">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+            android:exported="false"
+            android:label="@string/sensor_app_name" />
     </application>
 
 </manifest>

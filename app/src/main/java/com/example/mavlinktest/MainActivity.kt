@@ -1,5 +1,6 @@
 package com.example.mavlinktest
 
+import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
@@ -114,6 +115,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.btnLogClear)?.setOnClickListener { tvLog.text = "" }
         findViewById<Button>(R.id.btnConnect)?.setOnClickListener {
             Toast.makeText(this, "Automatic wireless link is used.", Toast.LENGTH_SHORT).show()
+        }
+        findViewById<Button>(R.id.btnSensorTest)?.setOnClickListener {
+            startActivity(Intent(this, SensorDataTestActivity::class.java))
         }
 
         RCSDKManager.initSDK(this, object : SDKManagerCallBack {

@@ -2,6 +2,7 @@ package com.example.mavlinktest
 
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.Typeface
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -39,6 +40,8 @@ class MainActivity : AppCompatActivity() {
         private const val CMD_MOTOR_CONTROL = 31025
         private const val CMD_STEPPER_CONTROL = 201
         private const val CMD_STEPPER_HOME = 202
+        private const val CMD_VOLTAGE_WARNING = 31033
+        private const val CMD_MOTOR_TELEMETRY = 31034
         private const val HEARTBEAT_PARAM = 700f
         private const val HEARTBEAT_ACK = 704f
 
@@ -63,11 +66,22 @@ class MainActivity : AppCompatActivity() {
         private const val RC_DEAD_HIGH = 1600
 
         private const val HEARTBEAT_TIMEOUT_MS = 2500L
+        private const val MOTOR_TELEMETRY_TIMEOUT_MS = 3000L
+
+        private const val DRIVER_TEMP_WARN_C = 85f
+        private const val DRIVER_TEMP_DANGER_C = 95f
+        private const val MOTOR_TEMP_WARN_C = 65f
+        private const val MOTOR_TEMP_DANGER_C = 75f
     }
 
     private lateinit var tvLog: TextView
     private lateinit var tvTimeStamp: TextView
     private lateinit var tvTopStatus: TextView
+    private lateinit var tvMotorVoltage: TextView
+    private lateinit var tvDriverTemp1: TextView
+    private lateinit var tvMotorTemp1: TextView
+    private lateinit var tvDriverTemp2: TextView
+    private lateinit var tvMotorTemp2: TextView
     private lateinit var videoView: com.skydroid.fpvplayer.FPVWidget
 
     private var myPipeline: Pipeline? = null
@@ -95,6 +109,15 @@ class MainActivity : AppCompatActivity() {
     private var lastHeartbeatAckTime = 0L
     private var heartbeatTimeoutLogged = false
 
+    private var motorTelemetryVoltage = Float.NaN
+    private var driverTemp1 = Float.NaN
+    private var motorTemp1 = Float.NaN
+    private var driverTemp2 = Float.NaN
+    private var motorTemp2 = Float.NaN
+    private var voltageWarningLevel = 0
+    private var lastMotorTelemetryTime = 0L
+    private var lastVoltageWarningTime = 0L
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         com.amap.api.maps.MapsInitializer.updatePrivacyShow(this, true, true)
@@ -104,8 +127,14 @@ class MainActivity : AppCompatActivity() {
         tvLog = findViewById(R.id.tvLog)
         tvTimeStamp = findViewById(R.id.tvTimeStamp)
         tvTopStatus = findViewById(R.id.tvTopStatus)
+        tvMotorVoltage = findViewById(R.id.tvMotorVoltage)
+        tvDriverTemp1 = findViewById(R.id.tvDriverTemp1)
+        tvMotorTemp1 = findViewById(R.id.tvMotorTemp1)
+        tvDriverTemp2 = findViewById(R.id.tvDriverTemp2)
+        tvMotorTemp2 = findViewById(R.id.tvMotorTemp2)
         videoView = findViewById(R.id.videoView)
         refreshTopStatus()
+        refreshMotorTelemetryStatus()
 
         setupVideo()
         setupTabs()
@@ -183,6 +212,7 @@ class MainActivity : AppCompatActivity() {
             override fun run() {
                 sendHeartbeat()
                 checkHeartbeatTimeout()
+                checkMotorTelemetryTimeout()
             }
         }, 0, 500)
     }
@@ -205,6 +235,13 @@ class MainActivity : AppCompatActivity() {
             }
         } else if (!timedOut) {
             runOnUiThread { refreshTopStatus() }
+        }
+    }
+
+    private fun checkMotorTelemetryTimeout() {
+        if (lastMotorTelemetryTime == 0L) return
+        if (System.currentTimeMillis() - lastMotorTelemetryTime > MOTOR_TELEMETRY_TIMEOUT_MS) {
+            runOnUiThread { refreshMotorTelemetryStatus() }
         }
     }
 
@@ -444,34 +481,129 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun handleMotorTelemetry(params: FloatArray) {
+        motorTelemetryVoltage = params[0]
+        driverTemp1 = params[1]
+        motorTemp1 = params[2]
+        driverTemp2 = params[3]
+        motorTemp2 = params[4]
+        lastMotorTelemetryTime = System.currentTimeMillis()
+        runOnUiThread { refreshMotorTelemetryStatus() }
+    }
+
+    private fun handleVoltageWarning(params: FloatArray) {
+        motorTelemetryVoltage = params[0]
+        voltageWarningLevel = params[1].roundToInt().coerceIn(0, 2)
+        lastVoltageWarningTime = System.currentTimeMillis()
+        runOnUiThread { refreshMotorTelemetryStatus() }
+    }
+
+    private fun refreshMotorTelemetryStatus() {
+        val telemetryOnline = lastMotorTelemetryTime > 0L &&
+            System.currentTimeMillis() - lastMotorTelemetryTime <= MOTOR_TELEMETRY_TIMEOUT_MS
+        val voltageOnline = !motorTelemetryVoltage.isNaN() && (
+            telemetryOnline ||
+                lastVoltageWarningTime > 0L &&
+                System.currentTimeMillis() - lastVoltageWarningTime <= MOTOR_TELEMETRY_TIMEOUT_MS
+            )
+
+        if (voltageOnline) {
+            setTelemetryField(
+                tvMotorVoltage,
+                "电压",
+                motorTelemetryVoltage,
+                "V",
+                voltageColor(),
+                voltageWarningLevel >= 2
+            )
+        } else {
+            setTelemetryField(tvMotorVoltage, "电压", null, "V", Color.parseColor("#90A4AE"), false)
+        }
+
+        if (!telemetryOnline) {
+            setTelemetryField(tvDriverTemp1, "驱动1", null, "℃", Color.parseColor("#90A4AE"), false)
+            setTelemetryField(tvMotorTemp1, "电机1", null, "℃", Color.parseColor("#90A4AE"), false)
+            setTelemetryField(tvDriverTemp2, "驱动2", null, "℃", Color.parseColor("#90A4AE"), false)
+            setTelemetryField(tvMotorTemp2, "电机2", null, "℃", Color.parseColor("#90A4AE"), false)
+            return
+        }
+
+        setTempField(tvDriverTemp1, "驱动1", driverTemp1, DRIVER_TEMP_WARN_C, DRIVER_TEMP_DANGER_C)
+        setTempField(tvMotorTemp1, "电机1", motorTemp1, MOTOR_TEMP_WARN_C, MOTOR_TEMP_DANGER_C)
+        setTempField(tvDriverTemp2, "驱动2", driverTemp2, DRIVER_TEMP_WARN_C, DRIVER_TEMP_DANGER_C)
+        setTempField(tvMotorTemp2, "电机2", motorTemp2, MOTOR_TEMP_WARN_C, MOTOR_TEMP_DANGER_C)
+    }
+
+    private fun setTempField(
+        view: TextView,
+        label: String,
+        value: Float,
+        warnThreshold: Float,
+        dangerThreshold: Float
+    ) {
+        val color = when {
+            value >= dangerThreshold -> Color.parseColor("#F44336")
+            value >= warnThreshold -> Color.parseColor("#FF9800")
+            else -> Color.parseColor("#00E5FF")
+        }
+        setTelemetryField(view, label, value, "℃", color, value >= dangerThreshold)
+    }
+
+    private fun setTelemetryField(
+        view: TextView,
+        label: String,
+        value: Float?,
+        unit: String,
+        color: Int,
+        bold: Boolean
+    ) {
+        val valueText = if (value == null || value.isNaN()) "--" else "%.1f".format(Locale.getDefault(), value)
+        view.text = "$label:$valueText$unit"
+        view.setTextColor(color)
+        view.setTypeface(Typeface.DEFAULT, if (bold) Typeface.BOLD else Typeface.NORMAL)
+    }
+
+    private fun voltageColor(): Int {
+        return when (voltageWarningLevel) {
+            1 -> Color.parseColor("#FF9800")
+            2 -> Color.parseColor("#F44336")
+            else -> Color.parseColor("#4CAF50")
+        }
+    }
+
     private val mavlinkParser = SimpleMavlinkParser(
         onCommandReceived = commandHandler@{ command, params ->
-            if (command == CMD_MOTOR_CONTROL) {
-                val param1 = params[0]
-                if (abs(param1 - HEARTBEAT_ACK) < 0.1f) {
-                    lastHeartbeatAckTime = System.currentTimeMillis()
-                    heartbeatTimeoutLogged = false
-                    runOnUiThread { refreshTopStatus() }
-                    return@commandHandler
+            when (command) {
+                CMD_MOTOR_CONTROL -> {
+                    val param1 = params[0]
+                    if (abs(param1 - HEARTBEAT_ACK) < 0.1f) {
+                        lastHeartbeatAckTime = System.currentTimeMillis()
+                        heartbeatTimeoutLogged = false
+                        runOnUiThread { refreshTopStatus() }
+                        return@commandHandler
+                    }
+
+                    runOnUiThread {
+                        val waveValue = params[0]
+                        val currentFragment = supportFragmentManager.findFragmentById(R.id.fragmentContainer)
+                        if (currentFragment is DetectFragment) currentFragment.updateGraph(waveValue)
+                        if (waveValue >= 95) tvLog.append("High load warning: ${waveValue.toInt()}%\n")
+
+                        updateRobotStatus(
+                            batteryVol = params[1],
+                            batteryPct = (params[1] / 48.0f * 100).toInt().coerceIn(0, 100),
+                            currentA = params[2],
+                            pitchAngle = params[3],
+                            pingMs = 22,
+                            tempOdd = params[4],
+                            tempEven = params[5],
+                            wireDiameter = 30.0f
+                        )
+                    }
                 }
 
-                runOnUiThread {
-                    val waveValue = params[0]
-                    val currentFragment = supportFragmentManager.findFragmentById(R.id.fragmentContainer)
-                    if (currentFragment is DetectFragment) currentFragment.updateGraph(waveValue)
-                    if (waveValue >= 95) tvLog.append("High load warning: ${waveValue.toInt()}%\n")
-
-                    updateRobotStatus(
-                        batteryVol = params[1],
-                        batteryPct = (params[1] / 48.0f * 100).toInt().coerceIn(0, 100),
-                        currentA = params[2],
-                        pitchAngle = params[3],
-                        pingMs = 22,
-                        tempOdd = params[4],
-                        tempEven = params[5],
-                        wireDiameter = 30.0f
-                    )
-                }
+                CMD_MOTOR_TELEMETRY -> handleMotorTelemetry(params)
+                CMD_VOLTAGE_WARNING -> handleVoltageWarning(params)
             }
         },
         onGpsReceived = { lat, lon ->

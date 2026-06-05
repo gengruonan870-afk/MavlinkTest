@@ -41,6 +41,66 @@
             android:textSize="10sp" />
     </LinearLayout>
 
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="30dp"
+        android:background="#101C33"
+        android:fillViewport="true"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingHorizontal="10dp">
+
+            <TextView
+                android:id="@+id/tvMotorVoltage"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="18dp"
+                android:text="电压:--V"
+                android:textColor="#90A4AE"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/tvDriverTemp1"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="18dp"
+                android:text="驱动1:--℃"
+                android:textColor="#90A4AE"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/tvMotorTemp1"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="18dp"
+                android:text="电机1:--℃"
+                android:textColor="#90A4AE"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/tvDriverTemp2"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="18dp"
+                android:text="驱动2:--℃"
+                android:textColor="#90A4AE"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/tvMotorTemp2"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="电机2:--℃"
+                android:textColor="#90A4AE"
+                android:textSize="11sp" />
+        </LinearLayout>
+    </HorizontalScrollView>
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"

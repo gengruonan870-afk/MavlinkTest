@@ -703,8 +703,8 @@ class MainActivity : AppCompatActivity() {
             videoView.url = "rtsp://192.168.144.108:554/stream=0"
             videoView.usingMediaCodec = true
             videoView.start()
-        } catch (e: Exception) {
-            tvLog.append("Video stream init failed: ${e.message}\n")
+        } catch (t: Throwable) {
+            tvLog.append("视频模块启动失败，可继续查看其他页面: ${t.message}\n")
         }
     }
 

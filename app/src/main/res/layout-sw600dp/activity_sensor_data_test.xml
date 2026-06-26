@@ -79,6 +79,82 @@
         android:visibility="gone" />
 
     <LinearLayout
+        android:id="@+id/panelDeviceSignal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:background="#0A1128"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="8dp">
+
+        <TextView
+            android:layout_width="84dp"
+            android:layout_height="wrap_content"
+            android:text="设备控制"
+            android:textColor="#88CCFF"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/btnSensorSelfCheck"
+            android:layout_width="96dp"
+            android:layout_height="40dp"
+            android:backgroundTint="#1565C0"
+            android:text="设备自检"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/btnResetEncoder"
+            android:layout_width="112dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="8dp"
+            android:backgroundTint="#1565C0"
+            android:text="编码器复位"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/btnManualModeOnly"
+            android:layout_width="96dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="8dp"
+            android:backgroundTint="#2E7D32"
+            android:text="进入手动"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/btnAutoModeOnly"
+            android:layout_width="96dp"
+            android:layout_height="40dp"
+            android:layout_marginStart="8dp"
+            android:backgroundTint="#2E7D32"
+            android:text="进入自动"
+            android:textSize="12sp" />
+
+        <CheckBox
+            android:id="@+id/cbAutoModeSwitch"
+            android:layout_width="230dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:checked="true"
+            android:text="自动切换手动/自动"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/tvSignalStatus"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="设备控制: 等待操作"
+            android:textColor="#88CCFF"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="42dp"
         android:layout_marginTop="10dp"

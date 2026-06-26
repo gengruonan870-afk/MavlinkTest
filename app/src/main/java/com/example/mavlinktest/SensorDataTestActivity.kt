@@ -24,6 +24,7 @@ import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.util.Locale
 import java.util.concurrent.Executors
 
@@ -44,14 +45,29 @@ class SensorDataTestActivity : AppCompatActivity() {
 
     companion object {
         private const val BASE_URL = "http://36.133.42.8:9010"
+        private const val SIGNAL_BASE_URL = "http://36.133.42.8:8119"
         private const val USERNAME = "diankeyuan"
         private const val PASSWORD = "123456"
         private const val TIMEOUT_MS = 15000
+        private const val SIGNAL_TIMEOUT_MS = 15000
+        private const val PATH_SEND_SIGNALLING = "/api/gather/signalling/sendSignalling"
+
+        private const val CODE_SENSOR_SELF_CHECK = "F3"
+        private const val CODE_RESET_ENCODER = "F9"
+        private const val CODE_MODE_SWITCH = "FC"
+        private const val VALUE_MANUAL = "00"
+        private const val VALUE_AUTO = "01"
     }
 
     private lateinit var etSerial: EditText
     private lateinit var btnAuth: Button
     private lateinit var btnFetch: Button
+    private lateinit var btnSensorSelfCheck: Button
+    private lateinit var btnResetEncoder: Button
+    private lateinit var btnManualModeOnly: Button
+    private lateinit var btnAutoModeOnly: Button
+    private lateinit var cbAutoModeSwitch: CheckBox
+    private lateinit var tvSignalStatus: TextView
     private lateinit var btnShowChart: Button
     private lateinit var btnShowResults: Button
     private lateinit var tvStatus: TextView
@@ -67,6 +83,7 @@ class SensorDataTestActivity : AppCompatActivity() {
     private lateinit var resultScroll: ScrollView
 
     private val executor = Executors.newSingleThreadExecutor()
+    private val signalExecutor = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
     private var accessToken: String? = null
     private var damageRecords = mutableListOf<DamageRecord>()
@@ -87,12 +104,19 @@ class SensorDataTestActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         executor.shutdownNow()
+        signalExecutor.shutdownNow()
     }
 
     private fun bindViews() {
         etSerial = findViewById(R.id.etSensorSerial)
         btnAuth = findViewById(R.id.btnSensorAuth)
         btnFetch = findViewById(R.id.btnSensorFetch)
+        btnSensorSelfCheck = findViewById(R.id.btnSensorSelfCheck)
+        btnResetEncoder = findViewById(R.id.btnResetEncoder)
+        btnManualModeOnly = findViewById(R.id.btnManualModeOnly)
+        btnAutoModeOnly = findViewById(R.id.btnAutoModeOnly)
+        cbAutoModeSwitch = findViewById(R.id.cbAutoModeSwitch)
+        tvSignalStatus = findViewById(R.id.tvSignalStatus)
         btnShowChart = findViewById(R.id.btnShowChart)
         btnShowResults = findViewById(R.id.btnShowResults)
         tvStatus = findViewById(R.id.tvSensorStatus)
@@ -111,6 +135,18 @@ class SensorDataTestActivity : AppCompatActivity() {
     private fun setupActions() {
         btnAuth.setOnClickListener { authenticate() }
         btnFetch.setOnClickListener { fetchAllData() }
+        btnSensorSelfCheck.setOnClickListener {
+            executeWithModeSwitch(CODE_SENSOR_SELF_CHECK, "", "设备自检")
+        }
+        btnResetEncoder.setOnClickListener {
+            executeWithModeSwitch(CODE_RESET_ENCODER, "", "编码器复位")
+        }
+        btnManualModeOnly.setOnClickListener {
+            executeModeOnly(manual = true)
+        }
+        btnAutoModeOnly.setOnClickListener {
+            executeModeOnly(manual = false)
+        }
         btnShowChart.setOnClickListener { showChartPanel() }
         btnShowResults.setOnClickListener { showResultPanel() }
         renderDamageTable()
@@ -204,6 +240,109 @@ class SensorDataTestActivity : AppCompatActivity() {
         }
     }
 
+    private fun executeWithModeSwitch(code: String, value: String = "", description: String) {
+        val serial = etSerial.text.toString().trim()
+        if (serial.isBlank()) {
+            Toast.makeText(this, "请输入检测编号", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val autoSwitch = cbAutoModeSwitch.isChecked
+        setSignalButtonsEnabled(false)
+        tvSignalStatus.text = "设备控制: 正在执行 $description..."
+
+        signalExecutor.execute {
+            try {
+                val token = ensureToken()
+                if (autoSwitch) {
+                    postSignalStatus("设备控制: 正在进入手动模式...")
+                    setMode(serial, token, manual = true)
+                    Thread.sleep(3000)
+                }
+
+                postSignalStatus("设备控制: 正在发送 $description...")
+                sendSignal(serial, token, code, value)
+
+                if (autoSwitch) {
+                    Thread.sleep(3000)
+                    postSignalStatus("设备控制: 正在返回自动模式...")
+                    setMode(serial, token, manual = false)
+                }
+
+                postUi {
+                    tvSignalStatus.text = "设备控制: $description 执行成功"
+                    Toast.makeText(this, "$description 执行成功", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                postUi {
+                    val msg = e.message ?: "未知错误"
+                    tvSignalStatus.text = "设备控制: $description 失败，$msg"
+                    Toast.makeText(this, "$description 失败: $msg", Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                postUi { setSignalButtonsEnabled(true) }
+            }
+        }
+    }
+
+    private fun executeModeOnly(manual: Boolean) {
+        val serial = etSerial.text.toString().trim()
+        if (serial.isBlank()) {
+            Toast.makeText(this, "请输入检测编号", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val description = if (manual) "进入手动模式" else "进入自动模式"
+        setSignalButtonsEnabled(false)
+        tvSignalStatus.text = "设备控制: 正在$description..."
+
+        signalExecutor.execute {
+            try {
+                val token = ensureToken()
+                setMode(serial, token, manual)
+                postUi {
+                    tvSignalStatus.text = "设备控制: $description 成功"
+                    Toast.makeText(this, "$description 成功", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                postUi {
+                    val msg = e.message ?: "未知错误"
+                    tvSignalStatus.text = "设备控制: $description 失败，$msg"
+                    Toast.makeText(this, "$description 失败: $msg", Toast.LENGTH_LONG).show()
+                }
+            } finally {
+                postUi { setSignalButtonsEnabled(true) }
+            }
+        }
+    }
+
+    private fun setMode(serial: String, token: String, manual: Boolean): String {
+        val value = if (manual) VALUE_MANUAL else VALUE_AUTO
+        return sendSignal(serial, token, CODE_MODE_SWITCH, value)
+    }
+
+    private fun sendSignal(serial: String, token: String, code: String, value: String = ""): String {
+        val query = listOf(
+            "code" to code,
+            "serial" to serial,
+            "value" to value
+        ).joinToString("&") { (key, queryValue) ->
+            "$key=${URLEncoder.encode(queryValue, "UTF-8")}"
+        }
+        val response = requestText(
+            "$SIGNAL_BASE_URL$PATH_SEND_SIGNALLING?$query",
+            "POST",
+            null,
+            token,
+            SIGNAL_TIMEOUT_MS
+        )
+        val json = JSONObject(response)
+        if (json.optInt("code") != 200) {
+            throw IllegalStateException(json.optString("msg", "信令接口返回失败"))
+        }
+        return response
+    }
+
     private fun ensureToken(): String {
         accessToken?.takeIf { it.isNotBlank() }?.let { return it }
         val body = JSONObject()
@@ -220,11 +359,17 @@ class SensorDataTestActivity : AppCompatActivity() {
         return token
     }
 
-    private fun requestText(urlText: String, method: String, body: String?, token: String?): String {
+    private fun requestText(
+        urlText: String,
+        method: String,
+        body: String?,
+        token: String?,
+        timeoutMs: Int = TIMEOUT_MS
+    ): String {
         val conn = (URL(urlText).openConnection() as HttpURLConnection).apply {
             requestMethod = method
-            connectTimeout = TIMEOUT_MS
-            readTimeout = TIMEOUT_MS
+            connectTimeout = timeoutMs
+            readTimeout = timeoutMs
             setRequestProperty("Accept", "application/json,text/plain,*/*")
             if (token != null) setRequestProperty("authorization-token", token)
             if (body != null) {
@@ -434,6 +579,18 @@ class SensorDataTestActivity : AppCompatActivity() {
         btnAuth.isEnabled = !loading
         btnFetch.isEnabled = !loading
         tvStatus.text = "状态: $message"
+    }
+
+    private fun setSignalButtonsEnabled(enabled: Boolean) {
+        btnSensorSelfCheck.isEnabled = enabled
+        btnResetEncoder.isEnabled = enabled
+        btnManualModeOnly.isEnabled = enabled
+        btnAutoModeOnly.isEnabled = enabled
+        cbAutoModeSwitch.isEnabled = enabled
+    }
+
+    private fun postSignalStatus(message: String) {
+        postUi { tvSignalStatus.text = message }
     }
 
     private fun postUi(block: () -> Unit) {
